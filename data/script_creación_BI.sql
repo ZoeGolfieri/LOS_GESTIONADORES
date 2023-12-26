@@ -155,32 +155,20 @@ END
 GO
 
 --Ubicacion
-CREATE FUNCTION LOS_GESTIONADORES.CALCULAR_UBICACION(@anuncio_id NUMERIC(19,0))
+CREATE FUNCTION LOS_GESTIONADORES.CALCULAR_UBICACION(@direccion_id int)
 RETURNS INT
 AS
 BEGIN
-    DECLARE @DIRECCION_ID INT;
-
-    SELECT @DIRECCION_ID = d.direccion_id
-    FROM LOS_GESTIONADORES.DIRECCION d
-    JOIN LOS_GESTIONADORES.INMUEBLE i ON d.direccion_id = i.direccion_id
-    JOIN LOS_GESTIONADORES.ANUNCIO a ON i.inmueble_id = a.inmueble_id
-    WHERE a.anuncio_id = @anuncio_id;
 
     DECLARE @UBICACION_ID INT;
 
-    SELECT @UBICACION_ID = u.ubicacion_id 
+    SELECT DISTINCT @UBICACION_ID = u.ubicacion_id 
     FROM LOS_GESTIONADORES.BI_UBICACION u
     JOIN LOS_GESTIONADORES.BARRIO b ON u.barrio = b.nombre
+	JOIN LOS_GESTIONADORES.LOCALIDAD l ON b.localidad_id = l.localidad_id AND l.nombre = u.localidad
     JOIN LOS_GESTIONADORES.DIRECCION d ON b.barrio_id = d.barrio_id
-    JOIN LOS_GESTIONADORES.LOCALIDAD l ON b.localidad_id = l.localidad_id
-    WHERE d.direccion_id = @DIRECCION_ID
-    AND l.localidad_id = (SELECT l2.localidad_id
-              FROM LOS_GESTIONADORES.LOCALIDAD l2
-              JOIN LOS_GESTIONADORES.BARRIO b2 ON l2.localidad_id = b2.localidad_id
-              JOIN LOS_GESTIONADORES.DIRECCION d2 ON b2.barrio_id = d2.barrio_id
-              WHERE d2.direccion_id = @DIRECCION_ID);
-
+	JOIN LOS_GESTIONADORES.Provincia p ON B.provincia_id = P.provincia_id and p.nombre = u.provincia
+    WHERE d.direccion_id = @direccion_id
     RETURN @UBICACION_ID;
 END
 GO
@@ -222,6 +210,15 @@ END
 as cuatrimestre,
 MONTH(fecha_publicacion)
 		FROM LOS_GESTIONADORES.ANUNCIO
+	UNION
+		SELECT DISTINCT YEAR(fecha_inicio),
+CASE WHEN  MONTH(fecha_inicio) BETWEEN 1 AND 4 THEN 1
+WHEN  MONTH(fecha_inicio) BETWEEN 5 AND 8 THEN 2
+ELSE 3
+END
+as cuatrimestre,
+MONTH(fecha_inicio)
+		FROM LOS_GESTIONADORES.Alquiler
   END
 GO
 
@@ -336,7 +333,7 @@ estado_anuncio_id
 )
 SELECT (DATEDIFF("d", a.fecha_publicacion, a.fecha_finalizacion))dias_diferencia, 
 SUM(a.precio_publicado)precio, TP.tipo_operacion_id,
-LOS_GESTIONADORES.CALCULAR_UBICACION(a.anuncio_id)ubicacion, TA.tipo_ambiente_id,
+LOS_GESTIONADORES.CALCULAR_UBICACION(I.direccion_id)ubicacion, TA.tipo_ambiente_id,
 LOS_GESTIONADORES.CALCULAR_RANGO_M2(I.superficie_total)superficie, TM.moneda_id , TI.tipo_inmueble_id, T.tiempo_id, S.sucursal_id,
 EA.estado_anuncio_id
 FROM LOS_GESTIONADORES.Anuncio A
@@ -350,7 +347,7 @@ INNER JOIN LOS_GESTIONADORES.AGENTE AG on (a.agente_id = AG.agente_id)
 INNER JOIN LOS_GESTIONADORES.BI_SUCURSAL S ON ( AG.sucursal_id = S.sucursal_id)
 INNER JOIN LOS_GESTIONADORES.BI_ESTADO_ANUNCIO EA ON (A.estado_anuncio_id = EA.estado_anuncio_id)
 GROUP BY fecha_publicacion, fecha_finalizacion, tp.tipo_operacion_id, TA.tipo_ambiente_id, 
-TM.moneda_id, TI.tipo_inmueble_id, T.tiempo_id, S.sucursal_id, LOS_GESTIONADORES.CALCULAR_UBICACION(a.anuncio_id),
+TM.moneda_id, TI.tipo_inmueble_id, T.tiempo_id, S.sucursal_id, LOS_GESTIONADORES.CALCULAR_UBICACION(I.direccion_id),
 LOS_GESTIONADORES.CALCULAR_RANGO_M2(I.superficie_total), EA.estado_anuncio_id
 END
 GO
@@ -371,7 +368,7 @@ tipo_operacion_id,
 estado_anuncio_id,
 tipo_moneda_id
  )
-SELECT LOS_GESTIONADORES.CALCULAR_UBICACION(A.anuncio_id)ubicacion, LOS_GESTIONADORES.CALCULAR_RANGO_ETARIO(AG.fecha_nacimiento)rango_etario,
+SELECT U.ubicacion_id, LOS_GESTIONADORES.CALCULAR_RANGO_ETARIO(AG.fecha_nacimiento)rango_etario,
  T.tiempo_id, S.sucursal_id, TI.tipo_inmueble_id, SUM(V.comision_inmobiliaria + V.precio_venta), 
  SUM(CAST(V.comision_inmobiliaria AS INT)), SUM(V.precio_venta / LOS_GESTIONADORES.CALCULAR_RANGO_M2(I.superficie_total)),
  TP.tipo_operacion_id, EA.estado_anuncio_id, TM.moneda_id
@@ -384,7 +381,8 @@ INNER JOIN LOS_GESTIONADORES.BI_TIPO_INMUEBLE TI on (I.tipo_inmueble_id = TI.tip
 INNER JOIN LOS_GESTIONADORES.BI_TIPO_OPERACION TP ON (A.tipo_operacion_id = TP.tipo_operacion_id)
 INNER JOIN LOS_GESTIONADORES.BI_ESTADO_ANUNCIO EA ON (A.estado_anuncio_id = EA.estado_anuncio_id)
 INNER JOIN LOS_GESTIONADORES.BI_TIPO_MONEDA TM on (a.moneda_id = TM.moneda_id)
-GROUP BY LOS_GESTIONADORES.CALCULAR_UBICACION(A.anuncio_id), LOS_GESTIONADORES.CALCULAR_RANGO_ETARIO(AG.fecha_nacimiento),
+INNER JOIN LOS_GESTIONADORES.BI_UBICACION U ON U.ubicacion_id = LOS_GESTIONADORES.CALCULAR_UBICACION(I.direccion_id)
+GROUP BY U.ubicacion_id, LOS_GESTIONADORES.CALCULAR_RANGO_ETARIO(AG.fecha_nacimiento),
 T.tiempo_id, S.sucursal_id, TI.tipo_inmueble_id, TP.tipo_operacion_id, EA.estado_anuncio_id, TM.moneda_id
 END
 GO
@@ -404,22 +402,24 @@ tipo_operacion_id,
 estado_anuncio_id,
 tipo_moneda_id
 )
-SELECT SUM(AL.comision), SUM(PA2.importe), LOS_GESTIONADORES.CALCULAR_UBICACION(A.anuncio_id),
+SELECT SUM(AL.comision), SUM(PA2.importe), U.ubicacion_id,
 LOS_GESTIONADORES.CALCULAR_RANGO_ETARIO(I.fecha_nacimiento), LOS_GESTIONADORES.CALCULAR_RANGO_ETARIO(AG.fecha_nacimiento), 
 T.tiempo_id, S.sucursal_id, TP.tipo_operacion_id, EA.estado_anuncio_id, TM.moneda_id
 FROM LOS_GESTIONADORES.alquiler AL 
-INNER JOIN LOS_GESTIONADORES.Pago_Alquiler PA2 ON (PA2.alquiler_id = AL.alquiler_id)
 INNER JOIN LOS_GESTIONADORES.anuncio A ON (A.anuncio_id = AL.anuncio_id)
 INNER JOIN LOS_GESTIONADORES.agente AG ON (A.agente_id= AG.agente_id)
-INNER JOIN LOS_GESTIONADORES.BI_SUCURSAL S ON ( AG.sucursal_id = S.sucursal_id)
-INNER JOIN LOS_GESTIONADORES.inquilino I ON (I.inquilino_id = AL.inquilino_id)
+INNER JOIN LOS_GESTIONADORES.inmueble INM ON (A.inmueble_id = INM.inmueble_id)
 INNER JOIN LOS_GESTIONADORES.BI_TIEMPO T ON (T.tiempo_anio = YEAR(AL.fecha_inicio) AND T.tiempo_mes = MONTH(AL.fecha_inicio))
-INNER JOIN LOS_GESTIONADORES.Tipo_Operacion TP ON (A.tipo_operacion_id = TP.tipo_operacion_id)
+INNER JOIN LOS_GESTIONADORES.BI_SUCURSAL S ON ( AG.sucursal_id = S.sucursal_id)
+INNER JOIN LOS_GESTIONADORES.BI_TIPO_OPERACION TP ON (A.tipo_operacion_id = TP.tipo_operacion_id)
 INNER JOIN LOS_GESTIONADORES.BI_ESTADO_ANUNCIO EA ON (A.estado_anuncio_id = EA.estado_anuncio_id)
 INNER JOIN LOS_GESTIONADORES.BI_TIPO_MONEDA TM on (a.moneda_id = TM.moneda_id)
-GROUP BY  LOS_GESTIONADORES.CALCULAR_UBICACION(A.anuncio_id),
+INNER JOIN LOS_GESTIONADORES.inquilino I ON (I.inquilino_id = AL.inquilino_id)
+INNER JOIN LOS_GESTIONADORES.Pago_Alquiler PA2 ON (PA2.alquiler_id = AL.alquiler_id)
+INNER JOIN LOS_GESTIONADORES.BI_UBICACION U ON U.ubicacion_id = LOS_GESTIONADORES.CALCULAR_UBICACION(INM.direccion_id)
+GROUP BY U.ubicacion_id,
 LOS_GESTIONADORES.CALCULAR_RANGO_ETARIO(I.fecha_nacimiento), LOS_GESTIONADORES.CALCULAR_RANGO_ETARIO(AG.fecha_nacimiento), 
-T.tiempo_id, S.sucursal_id, PA2.medio_pago_id, TP.tipo_operacion_id, EA.estado_anuncio_id, TM.moneda_id
+T.tiempo_id, S.sucursal_id, TP.tipo_operacion_id, EA.estado_anuncio_id, TM.moneda_id
 END
 GO
 
